@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>SevoWebXR — a memory of New York</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin: 0; height: 100%; background: #05060a; overflow: hidden; }
+    #info {
+      position: fixed; top: 12px; left: 12px; z-index: 10;
+      font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: #8fa6c8; pointer-events: none; text-shadow: 0 1px 2px #000;
+    }
+    #info b { color: #d7e3f4; }
+    #err {
+      display: none; position: fixed; inset: 0; z-index: 9999; padding: 20px;
+      background: #160a0a; color: #ffd7d7; white-space: pre-wrap; overflow: auto;
+      font: 13px/1.5 ui-monospace, monospace;
+    }
+    canvas { display: block; }
+  </style>
+
+  <!-- Deployment build. No build step. VRButton/OrbitControls are local modules
+       in ./src; three.js core loads from cdnjs (a top-tier global CDN, reachable
+       on the author's network too). All other paths are relative, so this works
+       at a GitHub Pages project URL (username.github.io/repo/) AND locally.
+       GitHub Pages / Netlify / Vercel serve over HTTPS = a secure context, so
+       WebXR / Enter-VR works straight from the public URL — no adb, no certs.
+       To go fully CDN-free, drop three.module.min.js into ./vendor and change the
+       import below to "./vendor/three.module.min.js". -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.169.0/three.module.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="info">
+    <b>SevoWebXR</b> — a memory of New York<br />
+    Desktop: drag to orbit · scroll to zoom<br />
+    VR: left stick <b>move</b> · right stick <b>turn / fly</b> · <b>Enter VR</b>
+  </div>
+  <div id="err"></div>
+
+  <!-- On-screen error reporter: if a module or shader fails, the real message
+       shows up on the page (no DevTools needed). Plain script, runs first. -->
+  <script>
+    (function () {
+      var box = document.getElementById('err');
+      window.__report = function (m) { box.style.display = 'block'; box.textContent += m + '\n'; };
+      window.addEventListener('error', function (e) {
+        if (e.target && e.target.src) window.__report('LOAD FAILED: ' + e.target.src);
+        else window.__report('ERROR: ' + (e.message || e.error) +
+          (e.filename ? '\n  at ' + e.filename + ':' + e.lineno : ''));
+      }, true);
+      window.addEventListener('unhandledrejection', function (e) {
+        window.__report('PROMISE REJECTED: ' + (e.reason && (e.reason.stack || e.reason.message || e.reason)));
+      });
+    })();
+  </script>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
