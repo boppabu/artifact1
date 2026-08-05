@@ -34,10 +34,13 @@ export function generateNYC(seed = 7) {
   const GRID = 11;          // blocks per side
   const CS = 0.55;          // block pitch
   const half = (GRID - 1) / 2;
-  const FLOOR_H = 0.060;    // vertical window spacing (smaller -> denser)
-  const COL_SP = 0.048;     // horizontal window spacing
-  const WIN_SKIP = 0.26;    // fraction of windows that are dark/empty
-  const WIN_SIZE = 0.013;   // base window splat size (small -> crisp up close)
+  // Density / definition knobs. Forces now cost once per splat instead of four
+  // times per splat (they moved into the sim pass), so there is headroom for a
+  // finer window grid than before. Raise WIN_SKIP or FLOOR_H if fps dips.
+  const FLOOR_H = 0.056;    // vertical window spacing (smaller -> denser)
+  const COL_SP = 0.045;     // horizontal window spacing
+  const WIN_SKIP = 0.22;    // fraction of windows that are dark/empty
+  const WIN_SIZE = 0.0118;  // base window splat size (small -> crisp up close)
 
   function windowColor() {
     const r = rnd();
