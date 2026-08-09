@@ -8,6 +8,8 @@
 // frame with no reload. The panel is desktop-only by nature: in an immersive
 // XR session the DOM is not composited, so it simply is not there.
 
+import { PRESETS } from './presets.js';
+
 const CSS = `
 #ui {
   position: fixed; top: 12px; right: 12px; z-index: 40; width: 268px;
@@ -57,6 +59,16 @@ const CSS = `
 #ui button.on { background: #24435f; color: #dff0ff; border-color: #3a6a92; }
 #ui .chk { display: flex; align-items: center; gap: 6px; margin: 3px 0; cursor: pointer; }
 #ui .chk input { accent-color: #6fa8dc; }
+#ui .presets { display: flex; gap: 4px; margin: 2px 0 4px; }
+#ui .presets button {
+  flex: 1 1 0; padding: 6px 0; display: flex; align-items: center; justify-content: center;
+}
+#ui .presets svg {
+  width: 15px; height: 15px; fill: none; stroke: currentColor;
+  stroke-width: 1.15; stroke-linecap: round; stroke-linejoin: round;
+}
+#ui .presets button.on svg { stroke-width: 1.5; }
+#ui .phint { color: #4a6180; min-height: 13px; margin: 0 0 4px; }
 `;
 
 export function createUI(ctx) {
@@ -79,6 +91,29 @@ export function createUI(ctx) {
   const stat = document.createElement('div');
   stat.className = 'stat';
   body.appendChild(stat);
+
+  // ---- presets (built first so they sit at the top of the panel) ----------
+  // applyPreset is a hoisted declaration defined further down; these handlers
+  // only ever fire after the whole panel exists.
+  const presetWrap = document.createElement('div');
+  presetWrap.className = 'presets';
+  const presetHint = document.createElement('div');
+  presetHint.className = 'phint';
+  const presetBtns = PRESETS.map((p, i) => {
+    const b = document.createElement('button');
+    b.innerHTML = p.icon;
+    b.title = p.name + ' — ' + p.hint;
+    b.onclick = () => {
+      applyPreset(p);
+      presetBtns.forEach((o, j) => o.classList.toggle('on', j === i));
+      presetHint.textContent = p.name + ' · ' + p.hint;
+    };
+    b.addEventListener('mouseenter', () => { presetHint.textContent = p.name + ' · ' + p.hint; });
+    presetWrap.appendChild(b);
+    return b;
+  });
+  body.appendChild(presetWrap);
+  body.appendChild(presetHint);
 
   const rows = [];
   const defaults = [];
@@ -209,8 +244,63 @@ export function createUI(ctx) {
   buttons([{ label: 'reset all', onClick: () => {
     defaults.forEach((d) => d.set(d.value));
     rows.forEach((r) => r.sync && r.sync());
+    presetBtns.forEach((b) => b.classList.remove('on'));
+    presetHint.textContent = '';
     syncEnabled();
   } }]);
+
+  // Push a preset into the live objects. Every section is optional, so a
+  // preset only disturbs what it actually names.
+  function applyPreset(p) {
+    if (p.gain) Object.assign(gain, p.gain);
+
+    if (U && p.medium) {
+      const md = p.medium;
+      if (md.spring   !== undefined) U.uSpring.value = md.spring;
+      if (md.damp     !== undefined) U.uDamp.value = md.damp;
+      if (md.maxSpeed !== undefined) U.uMaxSpeed.value = md.maxSpeed;
+      if (md.leash    !== undefined) {
+        P.uMaxWander.value = md.leash;
+        conductor.setMaxWander(md.leash);   // keep the entropy binning honest
+      }
+    }
+
+    const man = conductor.manual;
+    if (p.entropy) {
+      const e = p.entropy;
+      for (const k of ['auto', 'autoTarget', 'autoAdvance']) {
+        if (e[k] !== undefined) man[k] = e[k];
+      }
+      if (e.drive   !== undefined) man.drive = e.drive;
+      if (e.release !== undefined) man.release = e.release;
+      if (e.dwell   !== undefined) man.holdSeconds = e.dwell;
+      if (e.target  !== undefined) conductor.setTarget(e.target);
+    }
+
+    if (p.shape) {
+      const sh = p.shape;
+      if (sh.autoNM !== undefined) man.autoNM = sh.autoNM;
+      if (sh.n !== undefined && sh.m !== undefined) conductor.setNM(sh.n, sh.m);
+      if (sh.spin   !== undefined) man.spin = sh.spin;
+      if (sh.detune !== undefined) man.detune = sh.detune;
+      if (U && sh.moireFreq !== undefined) U.uMoireFreq.value = sh.moireFreq;
+    }
+
+    if (p.look) {
+      const lk = p.look;
+      if (lk.opacity    !== undefined) M.uOpacity.value = lk.opacity;
+      if (lk.splatSize  !== undefined) M.uSplatScale.value = lk.splatSize;
+      if (lk.align      !== undefined) M.uAlign.value = lk.align;
+      if (lk.stretch    !== undefined) M.uStretch.value = lk.stretch;
+      if (lk.alignSpeed !== undefined) M.uAlignSpeed.value = lk.alignSpeed;
+    }
+
+    if (p.mode !== undefined) conductor.setMode(p.mode);
+    if (p.lock !== undefined) conductor.setLock(p.lock);
+
+    rows.forEach((r) => r.sync && r.sync());
+    syncEnabled();
+  }
 
   // Grey out the controls the feedback loop is currently driving itself.
   function syncEnabled() {
@@ -233,6 +323,8 @@ export function createUI(ctx) {
 
   let acc = 0;
   return {
+    presets: PRESETS,
+    applyPreset,
     // Called from the render loop; cheap, and throttled by the caller.
     refresh(info) {
       const st = conductor.state;
