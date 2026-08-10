@@ -209,6 +209,10 @@ async function init() {
         prev[idx] = now;
         return now && !was;
       };
+      if (edge(3)) {                          // thumbstick click : summon panel
+        vrPanel.placeInFrontOf(camera);
+        vrPanel.markDirty();
+      }
       if (edge(4)) conductor.next();          // A / X : next field mode
       if (edge(5)) conductor.toggleLock();    // B / Y : hold the current mode
     }
@@ -240,10 +244,13 @@ async function init() {
     anisotropy: renderer.capabilities.getMaxAnisotropy(),
   });
   scene.add(vrPanel.mesh);
-  renderer.xr.addEventListener('sessionstart', () => {
-    vrPanel.placeInFrontOf(camera);
-    vrPanel.markDirty();
-  });
+  // NOTE: do not place the panel here. On `sessionstart` three.js has not yet
+  // written the headset pose into `camera`, so its position is still the
+  // desktop orbit position (~15m away, over the city) and the panel would be
+  // parked nowhere near the viewer. Defer to the first rendered XR frame,
+  // after renderer.render() has updated the camera from the real pose.
+  let needsPanelPlacement = false;
+  renderer.xr.addEventListener('sessionstart', () => { needsPanelPlacement = true; });
 
   // Debug handle: __sevo.conductor.state, __sevo.sim.uniforms, ...
   window.__sevo = { renderer, scene, camera, city, sim, automata, conductor, GAIN, ui, vrPanel };
@@ -303,6 +310,14 @@ async function init() {
     locomotion.update(dt);
     if (!renderer.xr.isPresenting) controls.update();
     renderer.render(scene, camera);
+
+    // Now that render() has written the real headset pose into `camera`, the
+    // panel can be parked where the viewer is actually standing and looking.
+    if (presenting && needsPanelPlacement) {
+      vrPanel.placeInFrontOf(camera);
+      vrPanel.markDirty();
+      needsPanelPlacement = false;
+    }
 
     if (dt > 0) fps += (1 / dt - fps) * 0.06;
     hudTimer += dt;
