@@ -27,6 +27,7 @@ import { createGPUSim } from './gpusim.js';
 import { createAutomata } from './automata.js';
 import { createConductor, MODES } from './conductor.js';
 import { createUI } from './ui.js';
+import { createVRPanel } from './vrpanel.js';
 
 // City placement: walkable scale, sitting on the floor and centered ahead so
 // you start at street level facing in and move/fly through it.
@@ -161,7 +162,7 @@ async function init() {
   // Reads triggers/grips and turns the hands into force sources. When both
   // hands are tracked they also become the two magnetic poles, so holding them
   // apart draws the dust into field lines running between them.
-  function updateHands(sim) {
+  function updateHands(sim, onPanel) {
     if (!sim) return;
     const U = sim.uniforms;
     const hands = [U.uHandA.value, U.uHandB.value];
@@ -171,6 +172,9 @@ async function init() {
       const c = controllers[i];
       const s = c.userData.inputSource;
       const h = hands[i];
+      // A hand aiming at the control panel drives the UI, not the dust —
+      // otherwise every slider drag would also blast the city apart.
+      if (onPanel && onPanel[i]) { h.set(0, -999, 0, 0); continue; }
       if (!s || !s.gamepad) { h.set(0, -999, 0, 0); continue; }
 
       c.getWorldPosition(_w);
@@ -229,8 +233,20 @@ async function init() {
     onReseed: () => automata.reseed(),
   });
 
+  // ---- the same panel, as a grabbable tablet inside VR --------------------
+  // The DOM is not composited in an immersive session, so the controls are
+  // redrawn into the scene from ui.model — one control definition, two views.
+  const vrPanel = createVRPanel(ui.model, {
+    anisotropy: renderer.capabilities.getMaxAnisotropy(),
+  });
+  scene.add(vrPanel.mesh);
+  renderer.xr.addEventListener('sessionstart', () => {
+    vrPanel.placeInFrontOf(camera);
+    vrPanel.markDirty();
+  });
+
   // Debug handle: __sevo.conductor.state, __sevo.sim.uniforms, ...
-  window.__sevo = { renderer, scene, camera, city, sim, automata, conductor, GAIN, ui };
+  window.__sevo = { renderer, scene, camera, city, sim, automata, conductor, GAIN, ui, vrPanel };
 
   const hud = document.getElementById('status');
   let hudTimer = 0;
@@ -246,6 +262,15 @@ async function init() {
     const st = conductor.update(dt, t, automata.entropyBits);
     modeLabel = st.mode;
     stepBodies(dt);
+
+    // The VR panel consumes controller input first, so it can tell the dust
+    // forces to stand down for any hand that is currently aiming at it.
+    const presenting = renderer.xr.isPresenting;
+    vrPanel.setVisible(presenting);
+    const onPanel = presenting
+      ? vrPanel.update(controllers, dt, ui.getStatus(), () => ui.syncAll())
+      : null;
+    if (presenting) vrPanel.render();
 
     if (sim) {
       const U = sim.uniforms;
@@ -268,7 +293,7 @@ async function init() {
         U.uPoleN.value.set(-Math.cos(t * 0.11) * 1.7, 0.7, -Math.sin(t * 0.11) * 1.7);
       }
 
-      updateHands(sim);
+      updateHands(sim, onPanel);
       sim.step(dt, t);
       M.uPosTex.value = sim.positionTexture;
       M.uVelTex.value = sim.velocityTexture;
@@ -288,6 +313,9 @@ async function init() {
           `  ·  entropy ${st.entropy.toFixed(2)}  ·  drive ${st.drive.toFixed(2)}`;
       }
       ui.refresh({ fps, splats: data.count, sim: !!sim });
+      // Values the entropy loop moves on its own (drive, release, set-point)
+      // need the VR panel repainted to show them.
+      vrPanel.markDirty();
     }
   }
 
@@ -341,6 +369,7 @@ function addControllers(parent, renderer) {
       new THREE.LineBasicMaterial({ color: 0x66ccff }));
     ray.scale.z = 3;
     controller.add(ray);
+    controller.userData.ray = ray;        // the VR panel shortens it on hover
     controller.addEventListener('connected', (e) => { controller.userData.inputSource = e.data; });
     controller.addEventListener('disconnected', () => { controller.userData.inputSource = null; });
     parent.add(controller);

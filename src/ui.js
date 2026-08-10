@@ -115,14 +115,30 @@ export function createUI(ctx) {
   body.appendChild(presetWrap);
   body.appendChild(presetHint);
 
+  // Emitted before any group so the presets sit at the top of the VR panel too.
+  const presetModel = {
+    kind: 'presets',
+    items: PRESETS.map((p, i) => ({
+      name: p.name, icon: p.icon, hint: p.hint,
+      apply: () => presetBtns[i].click(),
+      active: () => presetBtns[i].classList.contains('on'),
+    })),
+  };
+
   const rows = [];
   const defaults = [];
+
+  // A description of every control, emitted as the DOM is built. The VR panel
+  // (src/vrpanel.js) renders from this same list, so the two views can never
+  // drift apart — there is exactly one definition of each control.
+  const model = [presetModel];
 
   function group(name) {
     const d = document.createElement('div');
     d.className = 'grp';
     d.textContent = name;
     body.appendChild(d);
+    model.push({ kind: 'group', label: name });
   }
 
   // A slider bound to a getter/setter pair, so it always reflects live state.
@@ -142,6 +158,11 @@ export function createUI(ctx) {
     const o = { row, sync: () => { input.value = get(); val.textContent = (+get()).toFixed(fmt); } };
     rows.push(o);
     defaults.push({ set, value: get() });
+    model.push({
+      kind: 'slider', label, fmt, get, set,
+      min: +min, max: +max, step: +step,
+      disabled: () => row.classList.contains('disabled'),
+    });
     return o;
   }
 
@@ -155,6 +176,10 @@ export function createUI(ctx) {
     body.appendChild(l);
     rows.push({ sync: () => { input.checked = !!get(); } });
     defaults.push({ set, value: !!get() });
+    model.push({
+      kind: 'check', label, get,
+      set: (v) => { set(v); input.checked = !!v; syncEnabled(); },
+    });
     return l;
   }
 
@@ -169,6 +194,14 @@ export function createUI(ctx) {
       return b;
     });
     body.appendChild(wrap);
+    model.push({
+      kind: 'buttons',
+      items: defs.map((d, i) => ({
+        label: d.label,
+        onClick: d.onClick,
+        active: () => els[i].classList.contains('on'),
+      })),
+    });
     return els;
   }
 
@@ -325,6 +358,14 @@ export function createUI(ctx) {
   return {
     presets: PRESETS,
     applyPreset,
+    model,                                   // consumed by the VR panel
+    getStatus: () => stat.textContent,
+    // Re-read every DOM control from its live source. Called after the VR
+    // panel changes something, so the two views stay in agreement.
+    syncAll() {
+      rows.forEach((r) => r.sync && r.sync());
+      syncEnabled();
+    },
     // Called from the render loop; cheap, and throttled by the caller.
     refresh(info) {
       const st = conductor.state;
